@@ -17,7 +17,11 @@ include = [
     "/llama.cpp/**/*.h",
     "/llama.cpp/**/*.hpp",
     "/llama.cpp/**/*.cpp",
-    "/llama.cpp/ggml/src/**/*"
+    "/llama.cpp/ggml/src/**/*",
+    "README.md",
+    "MIT.txt",
+    "APL.txt",
+    "Cargo.toml"
 ]
 
 [dependencies]
