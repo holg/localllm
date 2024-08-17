@@ -9,6 +9,7 @@ repository = "https://gitlab.com/hjiayz/localllm"
 authors = ["hjiayz <hjiayz@163.com>"]
 build = "build.rs"
 include = [
+    "/include/*",
     "/examples/main.rs",
     "build.rs",
     "/src",
