@@ -1,0 +1,5 @@
+/target
+ggml.dll
+llama.dll
+*.gguf
+.vscode
