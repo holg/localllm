@@ -8,6 +8,16 @@ categories = [""]
 repository = "https://gitlab.com/hjiayz/localllm"
 authors = ["hjiayz <hjiayz@163.com>"]
 build = "build.rs"
+include = [
+    "build.rs",
+    "/src",
+    "/llama.cpp/**/*.c",
+    "/llama.cpp/**/*.h",
+    "/llama.cpp/**/*.hpp",
+    "/llama.cpp/**/*.cpp",
+    "/llama.cpp/ggml/src/**/*"
+]
+
 [dependencies]
 anyhow = "1.0"
 cxx = "1.0"

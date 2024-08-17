@@ -3,3 +3,4 @@ ggml.dll
 llama.dll
 *.gguf
 .vscode
+llama.log

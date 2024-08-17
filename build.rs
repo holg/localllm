@@ -30,5 +30,4 @@ fn main() {
     if let Ok(llama_lib_path) = std::env::var("LLAMA_LIB") {
         println!("cargo:rustc-link-search={llama_lib_path}");
     }
-
 }
