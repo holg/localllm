@@ -13,9 +13,10 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 -->
-#localllm
-qwen2 model lib by llama.cpp
+# localllm
 
-set LLAMA_LIB="llama.lib ggml.lib common.lib dir"
-llama.lib ggml.lib common.lib from https://github.com/hjiayz/build-llama.cpp
-example model https://hf-mirror.com/Qwen/Qwen2-1.5B-Instruct-GGUF/blob/main/qwen2-1_5b-instruct-q2_k.gguf
+#### qwen2 model lib by llama.cpp
+
+#### set LLAMA_LIB="llama.lib ggml.lib common.lib dir"
+#### llama.lib ggml.lib common.lib from https://github.com/hjiayz/build-llama.cpp
+#### example model https://hf-mirror.com/Qwen/Qwen2-1.5B-Instruct-GGUF/blob/main/qwen2-1_5b-instruct-q2_k.gguf
