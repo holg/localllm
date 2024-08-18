@@ -15,9 +15,13 @@
 #include "rust/cxx.h"
 #include <memory>
 
+struct SamplerOption;
+struct ModelOption;
+
 LLAMA_API void load_model(const std::string &modelpath,bool initbackend,llama_model** model,llama_context** context,bool debug);
 LLAMA_API void free_model(llama_model * model,llama_context* ctx,bool freebackend);
-LLAMA_API std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,const std::string &prompt,const rust::Slice<const std::array<rust::Str,2>>  history,struct llama_sampling_context * ctx_sampling,bool debug); 
-LLAMA_API void init_sampler(struct llama_sampling_context ** ctx_sampling,const std::string &grammar_text,bool debug);
+LLAMA_API std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,const std::string &prompt,const rust::Slice<const std::array<rust::Str,2>>  history,struct llama_sampling_context * ctx_sampling,bool debug,ModelOption const & opt); 
+LLAMA_API void init_sampler(struct llama_sampling_context ** ctx_sampling,const std::string &grammar_text,bool debug,SamplerOption const & config);
 LLAMA_API void free_sampler(struct llama_sampling_context * ctx_sampling);
+LLAMA_API void reset_sampler(llama_sampling_context * ctx);
 LLAMA_API std::unique_ptr<std::string> json_schema_to_gbnf(const std::string& src);

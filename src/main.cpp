@@ -21,8 +21,17 @@
 #include <memory>
 #include "localllm/llama.cpp/common/json.hpp"
 #include "localllm/llama.cpp/common/json-schema-to-grammar.h"
+#include "localllm/src/llm.rs.h"
 
-#define LLOG_TEE(x) if (debug) { LOG_TEE(x); }
+#if !defined(_MSC_VER) || defined(__clang__)
+    #define LLOGLN(...) LOGLN(__VA_ARGS__)
+    #define LLOG(...) LOG(__VA_ARGS__)
+    #define LLOG_TEE(...) LLOG_TEE(__VA_ARGS__)
+#else
+    #define LLOGLN(str, ...) LOGLN(str,  ##__VA_ARGS__)
+    #define LLOG(str, ...) LOG(str,  ##__VA_ARGS__)
+    #define LLOG_TEE(str, ...) LOG_TEE(str,  ##__VA_ARGS__)
+#endif
 
 using namespace std;
 
@@ -88,7 +97,7 @@ static void llama_log_callback_logTee(ggml_log_level level, const char * text, v
     //LLOG_TEE("%s", text);
 }
 
-static std::string chat_add_and_format(struct llama_model * model, std::vector<llama_chat_msg> & chat_msgs, std::string role, std::string content) {
+static std::string chat_add_and_format(struct llama_model * model, std::vector<llama_chat_msg> & chat_msgs, std::string role, std::string content,bool debug) {
     llama_chat_msg new_msg{role, content};
     std::string template_key = "tokenizer.chat_template", curr_tmpl;
     int32_t tlen = llama_model_meta_val_str(model, template_key.c_str(), nullptr, 0);
@@ -131,8 +140,26 @@ void free_model(llama_model * model,llama_context* ctx,bool freebackend) {
     
 }
 
-void init_sampler(struct llama_sampling_context ** ctx_sampling,const std::string &grammar_text,bool debug){
+void init_sampler(struct llama_sampling_context ** ctx_sampling,const std::string &grammar_text,bool debug,SamplerOption const &config){
     llama_sampling_params sparams;
+    sparams.n_prev = config.n_prev;
+    sparams.n_probs = config.n_probs;
+    sparams.min_keep = config.min_keep;
+    sparams.top_k = config.top_k;
+    sparams.top_p = config.top_p;
+    sparams.min_p = config.min_p;
+    sparams.tfs_z = config.tfs_z;
+    sparams.typical_p = config.typical_p;
+    sparams.temp = config.temp;
+    sparams.dynatemp_range = config.dynatemp_range;
+    sparams.dynatemp_exponent = config.dynatemp_exponent;
+    sparams.penalty_last_n = config.penalty_last_n;
+    sparams.penalty_repeat = config.penalty_repeat;
+    sparams.penalty_freq = config.penalty_freq;
+    sparams.penalty_present = config.penalty_present;
+    sparams.mirostat = config.mirostat;
+    sparams.mirostat_tau = config.mirostat_tau;
+    sparams.mirostat_eta = config.mirostat_eta;
     sparams.grammar = grammar_text;
     LLOG_TEE("sampling: \n%s\n", llama_sampling_print(sparams).c_str());
     LLOG_TEE("sampling order: \n%s\n", llama_sampling_order_print(sparams).c_str());
@@ -143,12 +170,14 @@ void free_sampler(struct llama_sampling_context * ctx_sampling){
     llama_sampling_free(ctx_sampling);
 }
 
-std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,const std::string &prompt,const rust::Slice<const std::array<rust::Str,2>>  history,struct llama_sampling_context * ctx_sampling,bool debug){
+std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,const std::string &prompt,const rust::Slice<const std::array<rust::Str,2>>  history,struct llama_sampling_context * ctx_sampling,bool debug,ModelOption const & opt){
     llama_kv_cache_clear(ctx);
 
 
     std::unique_ptr<std::string> outputstr = std::make_unique<std::string>("");
     gpt_params params;
+    params.n_predict = opt.n_predict;
+    params.sparams = ctx_sampling -> params;
     params.display_prompt = debug;
     llama_sampling_params & sparams = params.sparams;
     if (params.n_ctx != 0 && params.n_ctx < 8) {
@@ -185,7 +214,7 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
     }
     chat_msgs.push_back(llama_chat_msg{"user",prompt});
     // load the model and apply lora adapter, if any
-    LOG("%s: load the model and apply lora adapter, if any\n", __func__);
+    LLOG("%s: load the model and apply lora adapter, if any\n", __func__);
 
 
     std::string template_key = "tokenizer.chat_template", curr_tmpl;
@@ -210,7 +239,7 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
 
     const int n_ctx_train = llama_n_ctx_train(model);
     const int n_ctx = llama_n_ctx(ctx);
-    LOG("n_ctx: %d\n", n_ctx);
+    LLOG("n_ctx: %d\n", n_ctx);
 
     if (n_ctx > n_ctx_train) {
         LLOG_TEE("%s: warning: model was trained on only %d context tokens (%d specified)\n",
@@ -258,31 +287,31 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
     if (!llama_model_has_encoder(model)) {
         GGML_ASSERT(!llama_add_eos_token(model));
     }
-    LOG("add_bos: %d\n", add_bos);
+    LLOG("add_bos: %d\n", add_bos);
 
     std::vector<llama_token> embd_inp;
 
     {
         auto prompt = (params.conversation && params.enable_chat_template && !params.prompt.empty())
-            ? chat_add_and_format(model, chat_msgs, "system", params.prompt) // format the system prompt in conversation mode
+            ? chat_add_and_format(model, chat_msgs, "system", params.prompt,debug) // format the system prompt in conversation mode
             : params.prompt;
         if (params.interactive_first || !params.prompt.empty() || session_tokens.empty()) {
-            LOG("tokenize the prompt\n");
+            LLOG("tokenize the prompt\n");
             embd_inp = ::llama_tokenize(ctx, prompt, true, true);
         } else {
-            LOG("use session tokens\n");
+            LLOG("use session tokens\n");
             embd_inp = session_tokens;
         }
 
-        LOG("prompt: \"%s\"\n", log_tostr(prompt));
-        LOG("tokens: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd_inp).c_str());
+        LLOG("prompt: \"%s\"\n", log_tostr(prompt));
+        LLOG("tokens: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd_inp).c_str());
     }
 
     // Should not run without any tokens
     if (embd_inp.empty()) {
         if (add_bos) {
             embd_inp.push_back(llama_token_bos(model));
-            LOG("embd_inp was considered empty and bos was added: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd_inp).c_str());
+            LLOG("embd_inp was considered empty and bos was added: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd_inp).c_str());
         } else {
             LLOG_TEE("error: input is empty\n");
             return outputstr;
@@ -294,18 +323,18 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
     int guidance_offset = 0;
     int original_prompt_len = 0;
     if (ctx_guidance) {
-        LOG("cfg_negative_prompt: \"%s\"\n", log_tostr(sparams.cfg_negative_prompt));
+        LLOG("cfg_negative_prompt: \"%s\"\n", log_tostr(sparams.cfg_negative_prompt));
 
         guidance_inp = ::llama_tokenize(ctx_guidance, sparams.cfg_negative_prompt, true, true);
-        LOG("guidance_inp tokenized: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx_guidance, guidance_inp).c_str());
+        LLOG("guidance_inp tokenized: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx_guidance, guidance_inp).c_str());
 
         std::vector<llama_token> original_inp = ::llama_tokenize(ctx, params.prompt, true, true);
-        LOG("original_inp tokenized: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, original_inp).c_str());
+        LLOG("original_inp tokenized: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, original_inp).c_str());
 
         original_prompt_len = original_inp.size();
         guidance_offset = (int)guidance_inp.size() - original_prompt_len;
-        LOG("original_prompt_len: %s", log_tostr(original_prompt_len));
-        LOG("guidance_offset:     %s", log_tostr(guidance_offset));
+        LLOG("original_prompt_len: %s", log_tostr(original_prompt_len));
+        LLOG("guidance_offset:     %s", log_tostr(guidance_offset));
     }
 
     if ((int) embd_inp.size() > n_ctx - 4) {
@@ -338,14 +367,14 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
         llama_kv_cache_seq_rm(ctx, -1, n_matching_session_tokens, -1);
     }
 
-    LOGLN(
+    LLOGLN(
             "recalculate the cached logits (check): embd_inp.empty() %s, n_matching_session_tokens %zu, embd_inp.size() %zu, session_tokens.size() %zu, embd_inp.size() %zu",
             log_tostr(embd_inp.empty()), n_matching_session_tokens, embd_inp.size(), session_tokens.size(), embd_inp.size());
 
     // if we will use the cache for the full prompt without reaching the end of the cache, force
     // reevaluation of the last token to recalculate the cached logits
     if (!embd_inp.empty() && n_matching_session_tokens == embd_inp.size() && session_tokens.size() > embd_inp.size()) {
-        LOGLN("recalculate the cached logits (do): session_tokens.resize( %zu )", embd_inp.size() - 1);
+        LLOGLN("recalculate the cached logits (do): session_tokens.resize( %zu )", embd_inp.size() - 1);
 
         session_tokens.resize(embd_inp.size() - 1);
     }
@@ -498,7 +527,7 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
                     const int n_left    = n_past - params.n_keep;
                     const int n_discard = n_left/2;
 
-                    LOG("context full, swapping: n_past = %d, n_left = %d, n_ctx = %d, n_keep = %d, n_discard = %d\n",
+                    LLOG("context full, swapping: n_past = %d, n_left = %d, n_ctx = %d, n_keep = %d, n_discard = %d\n",
                             n_past, n_left, n_ctx, params.n_keep, n_discard);
 
                     llama_kv_cache_seq_rm (ctx, 0, params.n_keep            , params.n_keep + n_discard);
@@ -510,11 +539,11 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
                         n_past_guidance -= n_discard;
                     }
 
-                    LOG("after swap: n_past = %d, n_past_guidance = %d\n", n_past, n_past_guidance);
+                    LLOG("after swap: n_past = %d, n_past_guidance = %d\n", n_past, n_past_guidance);
 
-                    LOG("embd: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd).c_str());
+                    LLOG("embd: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd).c_str());
 
-                    LOG("clear session path\n");
+                    LLOG("clear session path\n");
                     path_session.clear();
                 }
             } else {
@@ -524,10 +553,10 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
                     const int bd = (ga_w/ga_n)*(ga_n - 1);
                     const int dd = (ga_w/ga_n) - ib*bd - ga_w;
 
-                    LOG("\n");
-                    LOG("shift: [%6d, %6d] + %6d -> [%6d, %6d]\n", ga_i, n_past, ib*bd, ga_i + ib*bd, n_past + ib*bd);
-                    LOG("div:   [%6d, %6d] / %6d -> [%6d, %6d]\n", ga_i + ib*bd, ga_i + ib*bd + ga_w, ga_n, (ga_i + ib*bd)/ga_n, (ga_i + ib*bd + ga_w)/ga_n);
-                    LOG("shift: [%6d, %6d] + %6d -> [%6d, %6d]\n", ga_i + ib*bd + ga_w, n_past + ib*bd, dd, ga_i + ib*bd + ga_w + dd, n_past + ib*bd + dd);
+                    LLOG("\n");
+                    LLOG("shift: [%6d, %6d] + %6d -> [%6d, %6d]\n", ga_i, n_past, ib*bd, ga_i + ib*bd, n_past + ib*bd);
+                    LLOG("div:   [%6d, %6d] / %6d -> [%6d, %6d]\n", ga_i + ib*bd, ga_i + ib*bd + ga_w, ga_n, (ga_i + ib*bd)/ga_n, (ga_i + ib*bd + ga_w)/ga_n);
+                    LLOG("shift: [%6d, %6d] + %6d -> [%6d, %6d]\n", ga_i + ib*bd + ga_w, n_past + ib*bd, dd, ga_i + ib*bd + ga_w + dd, n_past + ib*bd + dd);
 
                     llama_kv_cache_seq_add(ctx, 0, ga_i,                n_past,              ib*bd);
                     llama_kv_cache_seq_div(ctx, 0, ga_i + ib*bd,        ga_i + ib*bd + ga_w, ga_n);
@@ -537,7 +566,7 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
 
                     ga_i += ga_w/ga_n;
 
-                    LOG("\nn_past_old = %d, n_past = %d, ga_i = %d\n\n", n_past + bd, n_past, ga_i);
+                    LLOG("\nn_past_old = %d, n_past = %d, ga_i = %d\n\n", n_past + bd, n_past, ga_i);
                 }
             }
 
@@ -586,7 +615,7 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
                     input_buf  = embd_guidance.data();
                     input_size = embd_guidance.size();
 
-                    LOG("guidance context: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd_guidance).c_str());
+                    LLOG("guidance context: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd_guidance).c_str());
                 } else {
                     input_buf  = embd.data();
                     input_size = embd.size();
@@ -609,7 +638,7 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
                     n_eval = params.n_batch;
                 }
 
-                LOG("eval: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd).c_str());
+                LLOG("eval: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, embd).c_str());
 
                 if (llama_decode(ctx, llama_batch_get_one(&embd[i], n_eval, n_past, 0))) {
                     LLOG_TEE("%s : failed to eval\n", __func__);
@@ -618,7 +647,7 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
 
                 n_past += n_eval;
 
-                LOG("n_past = %d\n", n_past);
+                LLOG("n_past = %d\n", n_past);
                 // Display total tokens alongside total time
                 if (params.n_print > 0 && n_past % params.n_print == 0) {
                     LLOG_TEE("\n\033[31mTokens consumed so far = %d / %d \033[0m\n", n_past, n_ctx);
@@ -640,14 +669,14 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
                 need_to_save_session = false;
                 llama_state_save_file(ctx, path_session.c_str(), session_tokens.data(), session_tokens.size());
 
-                LOG("saved session to %s\n", path_session.c_str());
+                LLOG("saved session to %s\n", path_session.c_str());
             }
 
             const llama_token id = llama_sampling_sample(ctx_sampling, ctx, ctx_guidance);
 
             llama_sampling_accept(ctx_sampling, ctx, id, /* apply_grammar= */ true);
 
-            LOG("last: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, ctx_sampling->prev).c_str());
+            LLOG("last: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, ctx_sampling->prev).c_str());
 
             embd.push_back(id);
 
@@ -657,10 +686,10 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
             // decrement remaining sampling budget
             --n_remain;
 
-            LOG("n_remain: %d\n", n_remain);
+            LLOG("n_remain: %d\n", n_remain);
         } else {
             // some user input remains from prompt or interaction, forward it to processing
-            LOG("embd_inp.size(): %d, n_consumed: %d\n", (int) embd_inp.size(), n_consumed);
+            LLOG("embd_inp.size(): %d, n_consumed: %d\n", (int) embd_inp.size(), n_consumed);
             while ((int) embd_inp.size() > n_consumed) {
                 embd.push_back(embd_inp[n_consumed]);
 
@@ -736,13 +765,13 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
                 }
 
                 if (is_antiprompt) {
-                    LOG("found antiprompt: %s\n", last_output.c_str());
+                    LLOG("found antiprompt: %s\n", last_output.c_str());
                 }
             }
 
             // deal with end of generation tokens in interactive mode
             if (llama_token_is_eog(model, llama_sampling_last(ctx_sampling))) {
-                LOG("found an EOG token\n");
+                LLOG("found an EOG token\n");
 
             }
 
@@ -797,4 +826,8 @@ std::unique_ptr<std::string> generate(llama_model * model,llama_context* ctx,con
 std::unique_ptr<std::string> json_schema_to_gbnf(const std::string& src) {
     using json = nlohmann::ordered_json;
     return std::make_unique<std::string>(json_schema_to_grammar(json::parse(src)));
+}
+
+void reset_sampler(llama_sampling_context * ctx){
+    llama_sampling_reset(ctx);
 }

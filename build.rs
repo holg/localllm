@@ -18,7 +18,7 @@ fn main() {
         .include("llama.cpp/include")
         .include("include")
         .file("src/main.cpp")
-        .std("c++17")
+        .std("c++20")
         .compile("localllm");
 
     println!("cargo:rerun-if-changed=src/lib.rs");

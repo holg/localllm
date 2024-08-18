@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use localllm::{Model, Sampler, Tool, ToolPrompt};
+use localllm::{Model, ModelOption, Sampler, SamplerOption, Tool, ToolPrompt};
 
 use localllm::schema_for;
 use localllm::Deserialize;
@@ -82,26 +82,39 @@ fn main() {
         ],
     };
     let gbnf_schema = tools.qwen_gbnf();
-    let p = tools.qwen_tool_prompt();
+    let p = tools.qwen_tool_prompt("# Background Setting\nSophia, 20, is an enthusiastic, creative, and ambitious girl. She's passionate about travel, reading, photography, and fitness. With a compassionate heart, she volunteers regularly. Sophia dreams of becoming a social entrepreneur, leveraging her skills to create sustainable businesses that make a positive impact on society.");
     println!("{}", gbnf_schema);
     println!("{}", p);
-    let model = Model::new("qwen2-1_5b-instruct-q2_k.gguf");
-    let sampler = Sampler::new(&gbnf_schema);
+    let model = Model::new("qwen2-1_5b-instruct-q2_k.gguf",ModelOption::default() );
+    let sampler = Sampler::new(&gbnf_schema,&SamplerOption::default());
+    let ask = "Help me calculate the result of one plus one.";
     let chatreturn = model.chat(
-        "Help me calculate the result of one plus one.",
+        ask,
         &[["system", &p]],
         &sampler,
     );
+    println!("ask:{}", ask);
     println!("return:{}", chatreturn);
     let result = tools.qwen_parse_call(&chatreturn);
-    println!("result:{}", result);
-    let sampler = Sampler::new(&gbnf_schema);
+    println!("result:{:?}", result);
+    let ask = "Help me calculate the result of two minus one.";
     let chatreturn = model.chat(
-        "Help me calculate the result of two minus one.",
+        ask,
         &[["system", &p]],
         &sampler,
     );
+    println!("ask:{}", ask);
     println!("return:{}", chatreturn);
     let result = tools.qwen_parse_call(&chatreturn);
-    println!("result:{}", result);
+    println!("result:{:?}", result);
+    let ask = "who are you?";
+    let chatreturn = model.chat(
+        ask,
+        &[["system", &p]],
+        &sampler,
+    );
+    println!("ask:{}", ask);
+    println!("return:{}", chatreturn);
+    let result = tools.qwen_parse_call(&chatreturn);
+    println!("result:{:?}", result);
 }
